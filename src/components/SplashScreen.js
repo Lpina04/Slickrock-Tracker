@@ -14,7 +14,7 @@ export default function SplashScreen({ onDone }) {
     <div style={{ ...styles.overlay, opacity: phase === "out" ? 0 : 1 }}>
       <div style={{ ...styles.logo, transform: phase === "in" ? "scale(1)" : "scale(1.03)" }}>
         <img
-          src="/Diseno_sin_titulo_2.webp"
+          src="/slickrock-splash.png"
           alt="Slickrock Concrete"
           style={styles.splashImg}
         />
