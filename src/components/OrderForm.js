@@ -25,7 +25,7 @@ export default function OrderForm({ onClose, editOrder, allOrders }) {
     ? (allOrders || []).filter((o) => o.invoice === editOrder.invoice)
     : [];
 
-  const otherSiblings = siblingOrders.filter((o) => o.id !== editOrder?.id);
+
 
   useEffect(() => {
     if (editOrder) {
