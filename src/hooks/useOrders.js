@@ -35,9 +35,7 @@ export function useOrders() {
     if (total <= 1) {
       await addDoc(collection(db, "orders"), {
         ...orderData,
-        quantity: orderData.quantityUnit
-          ? `${orderData.quantityUnit} OF ${total}`
-          : `1 OF 1`,
+        quantity: `1 OF ${total}`,
         status: "prep",
         createdAt: serverTimestamp(),
       });
@@ -56,9 +54,63 @@ export function useOrders() {
     }
   }
 
-  async function updateOrder(orderId, orderData) {
-    const ref = doc(db, "orders", orderId);
-    await updateDoc(ref, { ...orderData });
+  // Updates all sibling orders with new field data.
+  // If total increased: creates missing units.
+  // If total decreased: returns list of candidates for deletion (user picks).
+  async function updateOrder(orderId, orderData, siblingOrders) {
+    const newTotal = parseInt(orderData.quantityTotal) || 1;
+
+    // Sort siblings by their unit number
+    const sorted = [...(siblingOrders || [])].sort((a, b) => {
+      const aUnit = parseInt((a.quantity || "").split(" OF ")[0]) || 0;
+      const bUnit = parseInt((b.quantity || "").split(" OF ")[0]) || 0;
+      return aUnit - bUnit;
+    });
+
+    const currentTotal = sorted.length;
+
+    // Build base data without quantity (we'll set per-unit)
+    const baseData = { ...orderData };
+    delete baseData.quantityUnit;
+    delete baseData.quantityTotal;
+
+    // Update all existing siblings with new field values + updated total
+    const batch = writeBatch(db);
+    for (const sibling of sorted) {
+      const unitNum = parseInt((sibling.quantity || "").split(" OF ")[0]) || 1;
+      batch.update(doc(db, "orders", sibling.id), {
+        ...baseData,
+        quantity: `${unitNum} OF ${newTotal}`,
+      });
+    }
+    await batch.commit();
+
+    // If total increased — add missing units
+    if (newTotal > currentTotal) {
+      const addBatch = writeBatch(db);
+      for (let i = currentTotal + 1; i <= newTotal; i++) {
+        const ref = doc(collection(db, "orders"));
+        addBatch.set(ref, {
+          ...baseData,
+          quantity: `${i} OF ${newTotal}`,
+          status: "prep",
+          createdAt: serverTimestamp(),
+        });
+      }
+      await addBatch.commit();
+      return null; // no deletion needed
+    }
+
+    // If total decreased — return candidates for deletion
+    if (newTotal < currentTotal) {
+      const extras = sorted.slice(newTotal); // units beyond new total
+      return extras.map((o) => ({
+        id: o.id,
+        label: o.quantity, // e.g. "5 OF 4" shown to user
+      }));
+    }
+
+    return null;
   }
 
   async function advanceOrder(orderId, currentStatus) {

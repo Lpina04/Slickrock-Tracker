@@ -20,12 +20,20 @@ const emptyForm = {
 };
 
 export default function OrderForm({ onClose, editOrder }) {
-  const { addOrder, updateOrder } = useOrders();
+  const { addOrder, updateOrder, deleteOrder, orders } = useOrders();
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
+  // Cards to delete when decreasing total
+  const [pendingDeletes, setPendingDeletes] = useState([]);
+  const [selectedDeletes, setSelectedDeletes] = useState([]);
 
   const isEdit = !!editOrder;
+
+  // Find all sibling orders (same invoice #)
+  const siblingOrders = isEdit
+    ? orders.filter((o) => o.invoice === editOrder.invoice)
+    : [];
 
   useEffect(() => {
     if (editOrder) {
@@ -53,6 +61,21 @@ export default function OrderForm({ onClose, editOrder }) {
     setForm((f) => ({ ...f, [field]: val }));
   }
 
+  function toggleDelete(id) {
+    setSelectedDeletes((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  async function handleDeleteConfirm() {
+    for (const id of selectedDeletes) {
+      await deleteOrder(id);
+    }
+    setPendingDeletes([]);
+    setSelectedDeletes([]);
+    onClose();
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setSaving(true);
@@ -72,9 +95,16 @@ export default function OrderForm({ onClose, editOrder }) {
       elastomericSealer: form.elastomericSealer,
       notes: form.notes.trim(),
     };
+
     try {
       if (isEdit) {
-        await updateOrder(editOrder.id, data);
+        const toDelete = await updateOrder(editOrder.id, data, siblingOrders);
+        if (toDelete && toDelete.length > 0) {
+          // Prompt user to pick which cards to delete
+          setPendingDeletes(toDelete);
+          setSaving(false);
+          return;
+        }
       } else {
         await addOrder(data);
       }
@@ -90,6 +120,48 @@ export default function OrderForm({ onClose, editOrder }) {
     setSaving(false);
   }
 
+  // ── Delete confirmation screen ──
+  if (pendingDeletes.length > 0) {
+    return (
+      <div style={styles.overlay} onClick={onClose}>
+        <div style={styles.sheet} onClick={(e) => e.stopPropagation()}>
+          <div style={styles.header}>
+            <h2 style={styles.title}>REMOVE UNITS</h2>
+            <button style={styles.closeBtn} onClick={onClose}>✕</button>
+          </div>
+          <p style={styles.deletePrompt}>
+            You reduced the total. Select which unit(s) to remove:
+          </p>
+          <div style={styles.deleteList}>
+            {pendingDeletes.map((item) => {
+              const selected = selectedDeletes.includes(item.id);
+              return (
+                <button
+                  key={item.id}
+                  style={{ ...styles.deleteChip, ...(selected ? styles.deleteChipSelected : {}) }}
+                  onClick={() => toggleDelete(item.id)}
+                >
+                  {item.label} {selected ? "✓" : ""}
+                </button>
+              );
+            })}
+          </div>
+          <button
+            style={{ ...styles.submitBtn, ...(selectedDeletes.length === 0 ? styles.disabledBtn : {}) }}
+            onClick={handleDeleteConfirm}
+            disabled={selectedDeletes.length === 0}
+          >
+            REMOVE SELECTED
+          </button>
+          <button style={styles.skipBtn} onClick={onClose}>
+            SKIP — KEEP ALL CARDS
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Main form ──
   return (
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.sheet} onClick={(e) => e.stopPropagation()}>
@@ -97,6 +169,11 @@ export default function OrderForm({ onClose, editOrder }) {
           <h2 style={styles.title}>{isEdit ? "EDIT ORDER" : "NEW ORDER"}</h2>
           <button style={styles.closeBtn} onClick={onClose}>✕</button>
         </div>
+        {isEdit && siblingOrders.length > 1 && (
+          <p style={styles.siblingNote}>
+            ✦ {siblingOrders.length} units share this invoice. Field changes apply to all units.
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <Row>
@@ -188,87 +265,66 @@ function Field({ label, children, required }) {
 
 const styles = {
   overlay: {
-    position: "fixed", inset: 0,
-    background: "rgba(0,0,0,0.75)",
-    zIndex: 100,
-    display: "flex",
-    alignItems: "flex-end",
+    position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)",
+    zIndex: 100, display: "flex", alignItems: "flex-end",
   },
   sheet: {
-    background: "#1a1a1a",
-    borderRadius: "20px 20px 0 0",
-    width: "100%",
-    maxHeight: "92vh",
-    overflowY: "auto",
-    padding: "24px 20px 40px",
+    background: "#1a1a1a", borderRadius: "20px 20px 0 0", width: "100%",
+    maxHeight: "92vh", overflowY: "auto", padding: "24px 20px 40px",
   },
   header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "24px",
+    display: "flex", justifyContent: "space-between",
+    alignItems: "center", marginBottom: "16px",
   },
   title: {
-    color: "#fff",
-    fontFamily: "'Oswald', sans-serif",
-    fontSize: "20px",
-    letterSpacing: "4px",
-    margin: 0,
+    color: "#fff", fontFamily: "'Oswald', sans-serif",
+    fontSize: "20px", letterSpacing: "4px", margin: 0,
   },
   closeBtn: {
-    background: "#2a2a2a",
-    border: "none",
-    color: "#aaa",
-    borderRadius: "50%",
-    width: "32px",
-    height: "32px",
-    fontSize: "14px",
-    cursor: "pointer",
+    background: "#2a2a2a", border: "none", color: "#aaa",
+    borderRadius: "50%", width: "32px", height: "32px", fontSize: "14px", cursor: "pointer",
   },
-  form: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "16px",
+  siblingNote: {
+    color: "#e86a2f", fontSize: "11px", fontFamily: "'Oswald', sans-serif",
+    letterSpacing: "1px", margin: "0 0 16px 0", lineHeight: 1.5,
   },
-  label: {
-    color: "#666",
-    fontSize: "10px",
-    letterSpacing: "1.5px",
-    fontFamily: "'Oswald', sans-serif",
-  },
+  form: { display: "flex", flexDirection: "column", gap: "16px" },
+  label: { color: "#666", fontSize: "10px", letterSpacing: "1.5px", fontFamily: "'Oswald', sans-serif" },
   input: {
-    background: "#111",
-    border: "1px solid #2a2a2a",
-    borderRadius: "8px",
-    padding: "12px 14px",
-    color: "#fff",
-    fontSize: "15px",
-    width: "100%",
-    boxSizing: "border-box",
-    fontFamily: "'Inter', sans-serif",
-    outline: "none",
+    background: "#111", border: "1px solid #2a2a2a", borderRadius: "8px",
+    padding: "12px 14px", color: "#fff", fontSize: "15px", width: "100%",
+    boxSizing: "border-box", fontFamily: "'Inter', sans-serif", outline: "none",
   },
   ofLabel: {
-    color: "#555",
-    fontSize: "12px",
-    fontFamily: "'Oswald', sans-serif",
-    paddingBottom: "12px",
-    letterSpacing: "1px",
+    color: "#555", fontSize: "12px", fontFamily: "'Oswald', sans-serif",
+    paddingBottom: "12px", letterSpacing: "1px",
   },
   submitBtn: {
-    background: "#e86a2f",
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    padding: "18px",
-    fontSize: "14px",
-    fontFamily: "'Oswald', sans-serif",
-    letterSpacing: "3px",
-    cursor: "pointer",
-    marginTop: "8px",
-    transition: "background 0.3s",
+    background: "#e86a2f", color: "#fff", border: "none", borderRadius: "10px",
+    padding: "18px", fontSize: "14px", fontFamily: "'Oswald', sans-serif",
+    letterSpacing: "3px", cursor: "pointer", marginTop: "8px", transition: "background 0.3s",
   },
-  successBtn: {
-    background: "#2d8a4e",
+  successBtn: { background: "#2d8a4e" },
+  disabledBtn: { background: "#333", cursor: "not-allowed" },
+  deletePrompt: {
+    color: "#aaa", fontSize: "13px", fontFamily: "'Inter', sans-serif",
+    marginBottom: "20px", lineHeight: 1.5,
+  },
+  deleteList: {
+    display: "flex", flexWrap: "wrap", gap: "10px", marginBottom: "24px",
+  },
+  deleteChip: {
+    background: "#111", border: "1px solid #333", borderRadius: "8px",
+    padding: "10px 16px", color: "#aaa", fontSize: "13px",
+    fontFamily: "'Oswald', sans-serif", letterSpacing: "1px", cursor: "pointer",
+  },
+  deleteChipSelected: {
+    background: "#3d1010", border: "1px solid #ff4444", color: "#ff4444",
+  },
+  skipBtn: {
+    display: "block", width: "100%", marginTop: "12px",
+    background: "none", border: "none", color: "#444",
+    fontSize: "11px", fontFamily: "'Oswald', sans-serif",
+    letterSpacing: "2px", cursor: "pointer", textAlign: "center",
   },
 };
