@@ -40,7 +40,10 @@ function UnitRow({ order, allOrders, stageColor }) {
         {/* Unit header — always visible */}
         <div style={styles.unitHeader} onClick={() => setExpanded(e => !e)}>
           <div style={{ ...styles.unitDot, background: stageColor }} />
-          <span style={styles.unitQty}>{order.quantity}</span>
+          <div style={styles.unitHeaderText}>
+            <span style={styles.unitQty}>{order.quantity}</span>
+            <span style={styles.unitItemName}>{order.itemName}</span>
+          </div>
           {order.pourDate && (
             <span style={styles.unitPourDate}>Pour: {formatDate(order.pourDate)}</span>
           )}
@@ -115,7 +118,12 @@ export default function InvoiceStack({ invoice, units, allOrders }) {
   });
 
   const firstUnit = sorted[0];
-  const total = (firstUnit?.quantity || "").split(" OF ")[1] || units.length;
+
+  // Detect if multiple different products are in this stack
+  const uniqueItems = [...new Set(sorted.map(u => u.itemName))];
+  const displayItem = uniqueItems.length > 1
+    ? `${uniqueItems.length} PRODUCTS`
+    : firstUnit?.itemName;
 
   return (
     <div style={styles.stack}>
@@ -127,11 +135,16 @@ export default function InvoiceStack({ invoice, units, allOrders }) {
             {firstUnit?.po && <span style={styles.poNum}>PO: {firstUnit.po}</span>}
           </div>
           <p style={styles.stackCustomer}>{firstUnit?.customer}</p>
-          <p style={styles.stackItem}>{firstUnit?.itemName}</p>
+          <p style={styles.stackItem}>
+            {displayItem}
+            {uniqueItems.length > 1 && (
+              <span style={styles.multiTag}> · MIXED</span>
+            )}
+          </p>
         </div>
         <div style={styles.stackRight}>
           <div style={{ ...styles.unitCount, borderColor: stageColor, color: stageColor }}>
-            {units.length}/{total}
+            {units.length} {units.length === 1 ? "UNIT" : "UNITS"}
           </div>
           <span style={styles.chevron}>{expanded ? "▲" : "▼"}</span>
         </div>
@@ -151,7 +164,7 @@ export default function InvoiceStack({ invoice, units, allOrders }) {
               }}
               onClick={() => setExpanded(true)}
             >
-              <span style={styles.sliverQty}>{unit.quantity}</span>
+              <span style={styles.sliverQty}>{unit.quantity} · {unit.itemName}</span>
               {unit.pourDate && (
                 <span style={styles.sliverDate}>Pour: {formatDate(unit.pourDate)}</span>
               )}
@@ -217,8 +230,11 @@ const styles = {
     display: "flex", alignItems: "center", gap: "10px",
     padding: "11px 14px", cursor: "pointer", background: "#161616",
   },
+  unitHeaderText: { display: "flex", flexDirection: "column", gap: "1px", flex: 1 },
+  unitQty: { color: "#ccc", fontSize: "12px", fontFamily: "'Oswald', sans-serif", letterSpacing: "1px" },
+  unitItemName: { color: "#888", fontSize: "10px", fontFamily: "'Oswald', sans-serif", letterSpacing: "1px" },
+  multiTag: { color: "#e86a2f", fontSize: "11px", fontFamily: "'Oswald', sans-serif", letterSpacing: "1px" },
   unitDot: { width: "8px", height: "8px", borderRadius: "50%", flexShrink: 0 },
-  unitQty: { color: "#ccc", fontSize: "13px", fontFamily: "'Oswald', sans-serif", letterSpacing: "1px", flex: 1 },
   unitPourDate: { color: "#555", fontSize: "11px", fontFamily: "'Inter', sans-serif" },
   unitChevron: { color: "#444", fontSize: "10px" },
   unitDetails: { padding: "12px 14px", background: "#111" },
