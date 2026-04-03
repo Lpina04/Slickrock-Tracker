@@ -63,9 +63,8 @@ export default function OrderForm({ onClose, editOrder }) {
       orderDate: form.orderDate,
       pourDate: form.pourDate,
       itemName: form.itemName.trim().toUpperCase(),
-      quantity: form.quantityUnit && form.quantityTotal
-        ? `${form.quantityUnit} OF ${form.quantityTotal}`
-        : form.quantityUnit || "",
+      quantityUnit: form.quantityUnit,
+      quantityTotal: form.quantityTotal,
       color: form.color.trim(),
       holeSize: form.holeSize.trim(),
       liner: form.liner.trim(),

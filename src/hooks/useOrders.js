@@ -10,10 +10,11 @@ import {
   serverTimestamp,
   query,
   orderBy,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "../firebase";
 
-const STAGES = ["prep", "curing", "paint", "shipping"];
+const STAGES = ["prep", "curing", "paint", "shipping", "completed"];
 
 export function useOrders() {
   const [orders, setOrders] = useState([]);
@@ -28,12 +29,36 @@ export function useOrders() {
     return unsub;
   }, []);
 
+  // Creates one order per unit if total > 1
   async function addOrder(orderData) {
-    await addDoc(collection(db, "orders"), {
-      ...orderData,
-      status: "prep",
-      createdAt: serverTimestamp(),
-    });
+    const total = parseInt(orderData.quantityTotal) || 1;
+    if (total <= 1) {
+      await addDoc(collection(db, "orders"), {
+        ...orderData,
+        quantity: orderData.quantityUnit
+          ? `${orderData.quantityUnit} OF ${total}`
+          : `1 OF 1`,
+        status: "prep",
+        createdAt: serverTimestamp(),
+      });
+    } else {
+      const batch = writeBatch(db);
+      for (let i = 1; i <= total; i++) {
+        const ref = doc(collection(db, "orders"));
+        batch.set(ref, {
+          ...orderData,
+          quantity: `${i} OF ${total}`,
+          status: "prep",
+          createdAt: serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    }
+  }
+
+  async function updateOrder(orderId, orderData) {
+    const ref = doc(db, "orders", orderId);
+    await updateDoc(ref, { ...orderData });
   }
 
   async function advanceOrder(orderId, currentStatus) {
@@ -47,9 +72,19 @@ export function useOrders() {
     }
   }
 
+  async function regressOrder(orderId, currentStatus) {
+    const currentIndex = STAGES.indexOf(currentStatus);
+    if (currentIndex > 0) {
+      const ref = doc(db, "orders", orderId);
+      await updateDoc(ref, {
+        status: STAGES[currentIndex - 1],
+      });
+    }
+  }
+
   async function deleteOrder(orderId) {
     await deleteDoc(doc(db, "orders", orderId));
   }
 
-  return { orders, loading, addOrder, advanceOrder, deleteOrder };
+  return { orders, loading, addOrder, updateOrder, advanceOrder, regressOrder, deleteOrder };
 }
