@@ -1,20 +1,12 @@
 // src/hooks/useOrders.js
 import { useEffect, useState } from "react";
 import {
-  collection,
-  onSnapshot,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  serverTimestamp,
-  query,
-  orderBy,
-  writeBatch,
+  collection, onSnapshot, addDoc, updateDoc, deleteDoc,
+  doc, serverTimestamp, query, orderBy, writeBatch,
 } from "firebase/firestore";
 import { db } from "../firebase";
 
-const STAGES = ["prep", "curing", "paint", "shipping", "completed"];
+export const STAGES = ["orders", "prep", "curing", "paint", "shipping", "completed"];
 
 export function useOrders() {
   const [orders, setOrders] = useState([]);
@@ -29,14 +21,13 @@ export function useOrders() {
     return unsub;
   }, []);
 
-  // Creates one order per unit if total > 1
   async function addOrder(orderData) {
     const total = parseInt(orderData.quantityTotal) || 1;
     if (total <= 1) {
       await addDoc(collection(db, "orders"), {
         ...orderData,
         quantity: `1 OF ${total}`,
-        status: "prep",
+        status: "orders",
         createdAt: serverTimestamp(),
       });
     } else {
@@ -46,7 +37,7 @@ export function useOrders() {
         batch.set(ref, {
           ...orderData,
           quantity: `${i} OF ${total}`,
-          status: "prep",
+          status: "orders",
           createdAt: serverTimestamp(),
         });
       }
@@ -54,60 +45,64 @@ export function useOrders() {
     }
   }
 
-  // Updates all sibling orders with new field data.
-  // If total increased: creates missing units.
-  // If total decreased: returns list of candidates for deletion (user picks).
-  async function updateOrder(orderId, orderData, siblingOrders) {
+  // scope: "this" | "selected" | "all"
+  // selectedIds: array of order ids (used when scope === "selected")
+  async function updateOrder(orderId, orderData, siblingOrders, scope, selectedIds) {
     const newTotal = parseInt(orderData.quantityTotal) || 1;
-
-    // Sort siblings by their unit number
     const sorted = [...(siblingOrders || [])].sort((a, b) => {
-      const aUnit = parseInt((a.quantity || "").split(" OF ")[0]) || 0;
-      const bUnit = parseInt((b.quantity || "").split(" OF ")[0]) || 0;
-      return aUnit - bUnit;
+      const aU = parseInt((a.quantity || "").split(" OF ")[0]) || 0;
+      const bU = parseInt((b.quantity || "").split(" OF ")[0]) || 0;
+      return aU - bU;
     });
-
     const currentTotal = sorted.length;
 
-    // Build base data without quantity (we'll set per-unit)
     const baseData = { ...orderData };
     delete baseData.quantityUnit;
     delete baseData.quantityTotal;
 
-    // Update all existing siblings with new field values + updated total
+    // Determine which orders to update based on scope
+    let toUpdate = [];
+    if (scope === "this") {
+      toUpdate = sorted.filter((o) => o.id === orderId);
+    } else if (scope === "selected") {
+      toUpdate = sorted.filter((o) => selectedIds.includes(o.id));
+    } else {
+      // "all"
+      toUpdate = sorted;
+    }
+
+    // Update selected orders
     const batch = writeBatch(db);
     for (const sibling of sorted) {
       const unitNum = parseInt((sibling.quantity || "").split(" OF ")[0]) || 1;
-      batch.update(doc(db, "orders", sibling.id), {
-        ...baseData,
-        quantity: `${unitNum} OF ${newTotal}`,
-      });
+      const shouldUpdate = toUpdate.some((o) => o.id === sibling.id);
+      const updatedFields = shouldUpdate
+        ? { ...baseData, quantity: `${unitNum} OF ${newTotal}` }
+        : { quantity: `${unitNum} OF ${newTotal}` }; // just update total label
+      batch.update(doc(db, "orders", sibling.id), updatedFields);
     }
     await batch.commit();
 
-    // If total increased — add missing units
-    if (newTotal > currentTotal) {
+    // If total increased and scope is "all" — add missing units
+    if (scope === "all" && newTotal > currentTotal) {
       const addBatch = writeBatch(db);
       for (let i = currentTotal + 1; i <= newTotal; i++) {
         const ref = doc(collection(db, "orders"));
         addBatch.set(ref, {
           ...baseData,
           quantity: `${i} OF ${newTotal}`,
-          status: "prep",
+          status: "orders",
           createdAt: serverTimestamp(),
         });
       }
       await addBatch.commit();
-      return null; // no deletion needed
+      return null;
     }
 
-    // If total decreased — return candidates for deletion
-    if (newTotal < currentTotal) {
-      const extras = sorted.slice(newTotal); // units beyond new total
-      return extras.map((o) => ({
-        id: o.id,
-        label: o.quantity, // e.g. "5 OF 4" shown to user
-      }));
+    // If total decreased and scope is "all" — return candidates
+    if (scope === "all" && newTotal < currentTotal) {
+      const extras = sorted.slice(newTotal);
+      return extras.map((o) => ({ id: o.id, label: o.quantity }));
     }
 
     return null;
@@ -128,9 +123,7 @@ export function useOrders() {
     const currentIndex = STAGES.indexOf(currentStatus);
     if (currentIndex > 0) {
       const ref = doc(db, "orders", orderId);
-      await updateDoc(ref, {
-        status: STAGES[currentIndex - 1],
-      });
+      await updateDoc(ref, { status: STAGES[currentIndex - 1] });
     }
   }
 
