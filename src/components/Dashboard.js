@@ -44,11 +44,11 @@ export default function Dashboard() {
       {/* Header */}
       <header style={styles.header}>
         <div style={styles.headerLeft}>
-          <span style={styles.rock}>🪨</span>
-          <div>
-            <h1 style={styles.brand}>SLICKROCK</h1>
-            <p style={styles.brandSub}>Production Tracker</p>
-          </div>
+          <img
+            src="/Slick-Rock-Logo-White-e1546982507174.png"
+            alt="Slickrock Concrete"
+            style={styles.headerLogo}
+          />
         </div>
         <div style={styles.headerRight}>
           {currentUser ? (
@@ -115,7 +115,8 @@ export default function Dashboard() {
 const styles = {
   root: { minHeight: "100vh", background: "#0f0f0f", color: "#fff", fontFamily: "'Inter', sans-serif", maxWidth: "480px", margin: "0 auto" },
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 16px 12px", borderBottom: "1px solid #1e1e1e", position: "sticky", top: 0, background: "#0f0f0f", zIndex: 50 },
-  headerLeft: { display: "flex", alignItems: "center", gap: "10px" },
+  headerLeft: { display: "flex", alignItems: "center" },
+  headerLogo: { height: "42px", objectFit: "contain" },
   rock: { fontSize: "28px" },
   brand: { fontFamily: "'Oswald', sans-serif", fontSize: "18px", letterSpacing: "5px", margin: 0, color: "#fff" },
   brandSub: { fontFamily: "'Oswald', sans-serif", fontSize: "9px", letterSpacing: "2px", color: "#e86a2f", margin: 0 },
@@ -125,9 +126,9 @@ const styles = {
   managerBtn: { background: "transparent", color: "#555", border: "1px solid #2a2a2a", borderRadius: "8px", padding: "8px 12px", fontSize: "10px", fontFamily: "'Oswald', sans-serif", letterSpacing: "1px", cursor: "pointer" },
   tabs: { display: "flex", overflowX: "auto", borderBottom: "1px solid #1e1e1e", scrollbarWidth: "none" },
   tab: { flex: "0 0 auto", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", padding: "10px 10px", background: "none", border: "none", borderBottom: "2px solid transparent", color: "#555", cursor: "pointer", transition: "color 0.2s, border-color 0.2s", minWidth: "68px" },
-  tabIcon: { fontSize: "14px" },
-  tabLabel: { fontSize: "7px", fontFamily: "'Oswald', sans-serif", letterSpacing: "1px", whiteSpace: "nowrap" },
-  tabBadge: { borderRadius: "10px", padding: "1px 7px", fontSize: "11px", fontFamily: "'Oswald', sans-serif", fontWeight: 600, transition: "background 0.2s, color 0.2s" },
+  tabIcon: { fontSize: "16px" },
+  tabLabel: { fontSize: "10px", fontFamily: "'Oswald', sans-serif", letterSpacing: "1px", whiteSpace: "nowrap" },
+  tabBadge: { borderRadius: "10px", padding: "1px 7px", fontSize: "12px", fontFamily: "'Oswald', sans-serif", fontWeight: 600, transition: "background 0.2s, color 0.2s" },
   stageBar: { display: "flex", alignItems: "center", gap: "10px", padding: "12px 16px", borderLeft: "3px solid", margin: "16px 16px 8px", background: "#141414", borderRadius: "0 8px 8px 0" },
   stageName: { fontFamily: "'Oswald', sans-serif", fontSize: "14px", letterSpacing: "3px", color: "#fff", flex: 1 },
   stageCount: { color: "#555", fontSize: "11px", fontFamily: "'Inter', sans-serif" },
