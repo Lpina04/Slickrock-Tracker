@@ -75,11 +75,23 @@ export function useOrders() {
     const batch = writeBatch(db);
     for (const sibling of sorted) {
       const unitNum = parseInt((sibling.quantity || "").split(" OF ")[0]) || 1;
+      const unitTotal = (sibling.quantity || "").split(" OF ")[1] || "1";
       const shouldUpdate = toUpdate.some((o) => o.id === sibling.id);
-      const updatedFields = shouldUpdate
-        ? { ...baseData, quantity: `${unitNum} OF ${newTotal}` }
-        : { quantity: `${unitNum} OF ${newTotal}` }; // just update total label
-      batch.update(doc(db, "orders", sibling.id), updatedFields);
+
+      if (shouldUpdate) {
+        // Full update — apply all field changes
+        const updatedTotal = scope === "all" ? newTotal : unitTotal;
+        batch.update(doc(db, "orders", sibling.id), {
+          ...baseData,
+          quantity: `${unitNum} OF ${updatedTotal}`,
+        });
+      } else if (scope === "all") {
+        // Only update the total label on non-selected cards when scope is all
+        batch.update(doc(db, "orders", sibling.id), {
+          quantity: `${unitNum} OF ${newTotal}`,
+        });
+      }
+      // scope "this" or "selected" — leave other cards completely untouched
     }
     await batch.commit();
 
