@@ -1,5 +1,5 @@
 // src/components/Dashboard.js
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useOrders } from "../hooks/useOrders";
 import { useAuth } from "../contexts/AuthContext";
 import InvoiceStack from "./InvoiceStack";
@@ -15,7 +15,6 @@ const STAGES = [
   { key: "completed", label: "COMPLETED",    icon: "✅", color: "#64748b" },
 ];
 
-// Group orders by invoice number within a given stage
 function groupByInvoice(orders, stage) {
   const inStage = orders.filter((o) => o.status === stage);
   const groups = {};
@@ -27,13 +26,67 @@ function groupByInvoice(orders, stage) {
   return groups;
 }
 
+// Check if an order matches the search query
+function orderMatches(order, query) {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  return (
+    (order.invoice || "").toLowerCase().includes(q) ||
+    (order.customer || "").toLowerCase().includes(q) ||
+    (order.po || "").toLowerCase().includes(q) ||
+    (order.itemName || "").toLowerCase().includes(q) ||
+    (order.color || "").toLowerCase().includes(q) ||
+    (order.notes || "").toLowerCase().includes(q)
+  );
+}
+
+// Check if an order matches the unit filter (e.g. "2" matches "2 OF 4")
+function unitMatches(order, unitQuery) {
+  if (!unitQuery) return true;
+  const q = unitQuery.trim();
+  const unitNum = (order.quantity || "").split(" OF ")[0] || "";
+  return unitNum === q;
+}
+
 export default function Dashboard() {
   const { orders, loading } = useOrders();
   const { currentUser, logout } = useAuth();
   const [showForm, setShowForm] = useState(false);
   const [activeTab, setActiveTab] = useState("orders");
   const [showLogin, setShowLogin] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [unitQuery, setUnitQuery] = useState("");
+  const searchRef = useRef(null);
 
+  useEffect(() => {
+    if (searchOpen && searchRef.current) {
+      searchRef.current.focus();
+    }
+  }, [searchOpen]);
+
+  function clearSearch() {
+    setSearchQuery("");
+    setUnitQuery("");
+    setSearchOpen(false);
+  }
+
+  const isSearching = searchQuery.trim() !== "" || unitQuery.trim() !== "";
+
+  // When searching: show results across ALL stages
+  const searchResults = isSearching
+    ? orders.filter((o) => orderMatches(o, searchQuery) && unitMatches(o, unitQuery))
+    : [];
+
+  // Group search results by invoice, annotated with their stage
+  const searchGroups = {};
+  for (const order of searchResults) {
+    const key = order.invoice || order.id;
+    if (!searchGroups[key]) searchGroups[key] = [];
+    searchGroups[key].push(order);
+  }
+
+  // Normal tab view
   const activeStage = STAGES.find((s) => s.key === activeTab);
   const groups = groupByInvoice(orders, activeTab);
   const groupCount = Object.keys(groups).length;
@@ -43,62 +96,121 @@ export default function Dashboard() {
     <div style={styles.root}>
       {/* Header */}
       <header style={styles.header}>
-        <div style={styles.headerLeft}>
-          <img
-            src="/Slick-Rock-Logo-White-e1546982507174.png"
-            alt="Slickrock Concrete"
-            style={styles.headerLogo}
-          />
-        </div>
-        <div style={styles.headerRight}>
-          {currentUser ? (
-            <>
-              <button style={styles.addBtn} onClick={() => setShowForm(true)}>+ ORDER</button>
-              <button style={styles.logoutBtn} onClick={logout}>OUT</button>
-            </>
-          ) : (
-            <button style={styles.managerBtn} onClick={() => setShowLogin(true)}>MANAGER LOGIN</button>
-          )}
-        </div>
+        {searchOpen ? (
+          <div style={styles.searchBar}>
+            <input
+              ref={searchRef}
+              style={styles.searchInput}
+              placeholder="Invoice #, customer, PO, keyword..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            <button style={styles.searchClear} onClick={clearSearch}>✕</button>
+          </div>
+        ) : (
+          <>
+            <div style={styles.headerLeft}>
+              <img src="/Slick-Rock-Logo-White-e1546982507174.png" alt="Slickrock Concrete" style={styles.headerLogo} />
+            </div>
+            <div style={styles.headerRight}>
+              <button style={styles.searchIcon} onClick={() => setSearchOpen(true)}>🔍</button>
+              {currentUser ? (
+                <>
+                  <button style={styles.addBtn} onClick={() => setShowForm(true)}>+ ORDER</button>
+                  <button style={styles.logoutBtn} onClick={logout}>OUT</button>
+                </>
+              ) : (
+                <button style={styles.managerBtn} onClick={() => setShowLogin(true)}>MANAGER LOGIN</button>
+              )}
+            </div>
+          </>
+        )}
       </header>
 
-      {/* Stage Tabs */}
-      <nav style={styles.tabs}>
-        {STAGES.map((s) => {
-          const count = orders.filter((o) => o.status === s.key).length;
-          const active = activeTab === s.key;
-          return (
-            <button key={s.key}
-              style={{ ...styles.tab, ...(active ? { borderBottomColor: s.color, color: "#fff" } : {}) }}
-              onClick={() => setActiveTab(s.key)}>
-              <span style={styles.tabIcon}>{s.icon}</span>
-              <span style={styles.tabLabel}>{s.label}</span>
-              <span style={{ ...styles.tabBadge, background: active ? s.color : "#2a2a2a", color: active ? "#fff" : "#666" }}>
-                {count}
-              </span>
-            </button>
-          );
-        })}
-      </nav>
+      {/* Unit filter — only shows when searching */}
+      {searchOpen && (
+        <div style={styles.unitFilterBar}>
+          <span style={styles.unitFilterLabel}>UNIT #</span>
+          <input
+            style={styles.unitFilterInput}
+            placeholder="e.g. 2  (finds 2 of 4)"
+            value={unitQuery}
+            onChange={(e) => setUnitQuery(e.target.value)}
+            type="number"
+            min="1"
+          />
+          {isSearching && (
+            <span style={styles.resultCount}>
+              {searchResults.length} result{searchResults.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+      )}
 
-      {/* Stage bar */}
-      <div style={{ ...styles.stageBar, borderLeftColor: activeStage.color }}>
-        <span style={{ color: activeStage.color, fontSize: "20px" }}>{activeStage.icon}</span>
-        <span style={styles.stageName}>{activeStage.label}</span>
-        <span style={styles.stageCount}>
-          {groupCount} {groupCount === 1 ? "invoice" : "invoices"} · {unitCount} units
-        </span>
-        {!currentUser && <span style={styles.loginHint}>🔒 Login to move orders</span>}
-      </div>
+      {/* Search results view */}
+      {isSearching ? (
+        <main style={styles.main}>
+          {searchResults.length === 0 && (
+            <p style={styles.empty}>No orders found.</p>
+          )}
+          {Object.entries(searchGroups).map(([invoice, units]) => (
+            <div key={invoice}>
+              {/* Stage badges for search results */}
+              <div style={styles.stageBadgeRow}>
+                {[...new Set(units.map((u) => u.status))].map((s) => {
+                  const stage = STAGES.find((st) => st.key === s);
+                  return (
+                    <span key={s} style={{ ...styles.stageBadge, background: stage?.color + "22", color: stage?.color, borderColor: stage?.color }}>
+                      {stage?.icon} {stage?.label}
+                    </span>
+                  );
+                })}
+              </div>
+              <InvoiceStack invoice={invoice} units={units} allOrders={orders} />
+            </div>
+          ))}
+        </main>
+      ) : (
+        <>
+          {/* Stage Tabs */}
+          <nav style={styles.tabs}>
+            {STAGES.map((s) => {
+              const count = orders.filter((o) => o.status === s.key).length;
+              const active = activeTab === s.key;
+              return (
+                <button key={s.key}
+                  style={{ ...styles.tab, ...(active ? { borderBottomColor: s.color, color: "#fff" } : {}) }}
+                  onClick={() => setActiveTab(s.key)}>
+                  <span style={styles.tabIcon}>{s.icon}</span>
+                  <span style={styles.tabLabel}>{s.label}</span>
+                  <span style={{ ...styles.tabBadge, background: active ? s.color : "#2a2a2a", color: active ? "#fff" : "#666" }}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </nav>
 
-      {/* Invoice Stacks */}
-      <main style={styles.main}>
-        {loading && <p style={styles.empty}>Loading...</p>}
-        {!loading && groupCount === 0 && <p style={styles.empty}>No orders in this stage.</p>}
-        {!loading && Object.entries(groups).map(([invoice, units]) => (
-          <InvoiceStack key={invoice} invoice={invoice} units={units} allOrders={orders} />
-        ))}
-      </main>
+          {/* Stage bar */}
+          <div style={{ ...styles.stageBar, borderLeftColor: activeStage.color }}>
+            <span style={{ color: activeStage.color, fontSize: "20px" }}>{activeStage.icon}</span>
+            <span style={styles.stageName}>{activeStage.label}</span>
+            <span style={styles.stageCount}>
+              {groupCount} {groupCount === 1 ? "invoice" : "invoices"} · {unitCount} units
+            </span>
+            {!currentUser && <span style={styles.loginHint}>🔒 Login to move orders</span>}
+          </div>
+
+          {/* Invoice Stacks */}
+          <main style={styles.main}>
+            {loading && <p style={styles.empty}>Loading...</p>}
+            {!loading && groupCount === 0 && <p style={styles.empty}>No orders in this stage.</p>}
+            {!loading && Object.entries(groups).map(([invoice, units]) => (
+              <InvoiceStack key={invoice} invoice={invoice} units={units} allOrders={orders} />
+            ))}
+          </main>
+        </>
+      )}
 
       {showForm && <OrderForm onClose={() => setShowForm(false)} allOrders={orders} />}
       {showLogin && !currentUser && (
@@ -114,13 +226,20 @@ export default function Dashboard() {
 
 const styles = {
   root: { minHeight: "100vh", background: "#0f0f0f", color: "#fff", fontFamily: "'Inter', sans-serif", maxWidth: "480px", margin: "0 auto" },
-  header: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 16px 12px", borderBottom: "1px solid #1e1e1e", position: "sticky", top: 0, background: "#0f0f0f", zIndex: 50 },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid #1e1e1e", position: "sticky", top: 0, background: "#0f0f0f", zIndex: 50, minHeight: "60px" },
   headerLeft: { display: "flex", alignItems: "center" },
   headerLogo: { height: "42px", objectFit: "contain" },
-  rock: { fontSize: "28px" },
-  brand: { fontFamily: "'Oswald', sans-serif", fontSize: "18px", letterSpacing: "5px", margin: 0, color: "#fff" },
-  brandSub: { fontFamily: "'Oswald', sans-serif", fontSize: "9px", letterSpacing: "2px", color: "#e86a2f", margin: 0 },
   headerRight: { display: "flex", gap: "8px", alignItems: "center" },
+  searchIcon: { background: "transparent", border: "1px solid #2a2a2a", borderRadius: "8px", color: "#aaa", fontSize: "16px", padding: "6px 10px", cursor: "pointer" },
+  searchBar: { display: "flex", alignItems: "center", gap: "8px", flex: 1 },
+  searchInput: { flex: 1, background: "#1a1a1a", border: "1px solid #333", borderRadius: "8px", padding: "10px 14px", color: "#fff", fontSize: "14px", fontFamily: "'Inter', sans-serif", outline: "none" },
+  searchClear: { background: "#2a2a2a", border: "none", color: "#aaa", borderRadius: "8px", padding: "10px 14px", fontSize: "14px", cursor: "pointer" },
+  unitFilterBar: { display: "flex", alignItems: "center", gap: "10px", padding: "10px 16px", background: "#111", borderBottom: "1px solid #1e1e1e" },
+  unitFilterLabel: { color: "#555", fontSize: "10px", fontFamily: "'Oswald', sans-serif", letterSpacing: "2px", whiteSpace: "nowrap" },
+  unitFilterInput: { flex: 1, background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: "6px", padding: "8px 12px", color: "#fff", fontSize: "14px", fontFamily: "'Inter', sans-serif", outline: "none" },
+  resultCount: { color: "#555", fontSize: "11px", fontFamily: "'Oswald', sans-serif", letterSpacing: "1px", whiteSpace: "nowrap" },
+  stageBadgeRow: { display: "flex", gap: "6px", padding: "8px 0 4px", flexWrap: "wrap" },
+  stageBadge: { fontSize: "10px", fontFamily: "'Oswald', sans-serif", letterSpacing: "1px", padding: "3px 8px", borderRadius: "20px", border: "1px solid" },
   addBtn: { background: "#e86a2f", color: "#fff", border: "none", borderRadius: "8px", padding: "8px 14px", fontSize: "12px", fontFamily: "'Oswald', sans-serif", letterSpacing: "1px", cursor: "pointer" },
   logoutBtn: { background: "transparent", color: "#555", border: "1px solid #2a2a2a", borderRadius: "8px", padding: "8px 12px", fontSize: "11px", fontFamily: "'Oswald', sans-serif", letterSpacing: "1px", cursor: "pointer" },
   managerBtn: { background: "transparent", color: "#555", border: "1px solid #2a2a2a", borderRadius: "8px", padding: "8px 12px", fontSize: "10px", fontFamily: "'Oswald', sans-serif", letterSpacing: "1px", cursor: "pointer" },
